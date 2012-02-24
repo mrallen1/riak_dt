@@ -34,7 +34,6 @@ gen_op() ->
 gen_elems() ->
     ?LET(A, int(), {A, oneof([A, int()])}).
 
-%% Maybe model qc state as op based?
 init_state() ->
     {0, dict:new(), []}.
 
@@ -90,6 +89,7 @@ update({add, Elem}, Actor, {ADict0, RDict}) ->
 update({remove, Elem}, _Actor, {ADict, RDict0}) ->
     RDict = remove_elem(orddict:find(Elem, ADict), Elem, RDict0),
     {ADict, RDict}.
+
 merge({ADict1, RDict1}, {ADict2, RDict2}) ->   
     MergedADict = merge_dicts(ADict1, ADict2),
     MergedRDict = merge_dicts(RDict1, RDict2),
