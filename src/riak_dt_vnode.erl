@@ -53,7 +53,6 @@
                    {merge, Mod::module(), Key::term(), {Mod::module(), RemoteVal::term()}, ReqId::term()}.
 
 -define(MASTER, riak_dt_vnode_master).
--define(NOP, fun() -> ok end).
 
 -record(state, {partition, node, storage_state, vnode_id, data_dir, storage_opts}).
 
@@ -130,8 +129,8 @@ handle_command({update, Mod, Key, Args}, Sender, #state{storage_state=StorageSta
             {noreply, State}
     end;
 handle_command({merge, Mod, Key, {Mod, RemoteVal}, ReqId}, Sender, #state{storage_state=StorageState}=State) ->
-    CallBack = fun(Reply) -> riak_core_vnode:reply(Sender, {ReqId, Reply}) end,
-    do_merge({Mod, Key}, RemoteVal, StorageState, CallBack),
+     riak_core_vnode:reply(Sender, {ReqId, ok}),
+    do_merge({Mod, Key}, RemoteVal, StorageState),
     {noreply, State};
 handle_command(merge_check, _Sender, #state{storage_state=StorageState,
                                             data_dir=DataDir,
@@ -170,7 +169,7 @@ handoff_finished(_TargetNode, State) ->
 handle_handoff_data(Binary, #state{storage_state=StorageState}=State) ->
     {KB, VB} = binary_to_term(Binary),
     {{Mod, Key}, {Mod, HoffVal}} = {binary_to_term(KB), binary_to_term(VB)},
-    ok = do_merge({Mod, Key}, HoffVal, StorageState, ?NOP),
+    ok = do_merge({Mod, Key}, HoffVal, StorageState),
     {reply, ok, State}.
 
 %% @doc Encodes a value to be sent over the wire in handoff.
@@ -215,8 +214,8 @@ terminate(_Reason, State) ->
 %% remote value will be accepted for the local state. If the key
 %% exists, the datatype-specific merge function will be called with
 %% the local and remote values and the merged value stored locally.
--spec do_merge(key(), term(), term(), function()) -> ok | {error, term()}.
-do_merge({Mod, Key}, RemoteVal, StorageState, CallBack) ->
+-spec do_merge(key(), term(), term()) -> ok | {error, term()}.
+do_merge({Mod, Key}, RemoteVal, StorageState) ->
     Merged = case lookup({Mod, Key}, StorageState) of
                  notfound ->
                      RemoteVal;
@@ -228,10 +227,8 @@ do_merge({Mod, Key}, RemoteVal, StorageState, CallBack) ->
     case Merged of
         {error, Reason2} ->
             lager:error("Looking up ~p failed with ~p, on merge.", [{Mod, Key}, Reason2]),
-            CallBack({error, Reason2}),
             ok;
         _ ->
-            CallBack(ok),
             store({{Mod, Key}, {Mod, Merged}}, StorageState)
     end.
 
