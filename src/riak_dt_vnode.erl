@@ -53,6 +53,7 @@
                    {merge, Mod::module(), Key::term(), {Mod::module(), RemoteVal::term()}, ReqId::term()}.
 
 -define(MASTER, riak_dt_vnode_master).
+-define(NOP, fun() -> ok end).
 
 -record(state, {partition, node, storage_state, vnode_id, data_dir, storage_opts}).
 
@@ -109,7 +110,7 @@ handle_command({value, Mod, Key, ReqId}, Sender, #state{partition=Idx, node=Node
     Reply = lookup({Mod, Key}, StorageState),
     riak_core_vnode:reply(Sender, {ReqId, {{Idx, Node}, Reply}}),
     {noreply, State};
-handle_command({update, Mod, Key, Args}, _Sender, #state{storage_state=StorageState,vnode_id=VnodeId}=State) ->
+handle_command({update, Mod, Key, Args}, Sender, #state{storage_state=StorageState,vnode_id=VnodeId}=State) ->
     Updated = case lookup({Mod, Key}, StorageState) of
                   {ok, {Mod, Val}} ->
                       Mod:update(Args, VnodeId, Val);
@@ -124,12 +125,13 @@ handle_command({update, Mod, Key, Args}, _Sender, #state{storage_state=StorageSt
             lager:error("Error ~p looking up ~p.", [Reason2, {Mod, Key}]),
             {reply, {error, Reason2}, State};
         _ ->
+            riak_core_vnode:reply(Sender, {ok, {Mod, Updated}}),
             store({{Mod, Key}, {Mod, Updated}}, StorageState),
-            {reply, {ok, {Mod, Updated}}, State}
+            {noreply, State}
     end;
 handle_command({merge, Mod, Key, {Mod, RemoteVal}, ReqId}, Sender, #state{storage_state=StorageState}=State) ->
-    Reply = do_merge({Mod, Key}, RemoteVal, StorageState),
-    riak_core_vnode:reply(Sender, {ReqId, Reply}),
+    CallBack = fun(Reply) -> riak_core_vnode:reply(Sender, {ReqId, Reply}) end,
+    do_merge({Mod, Key}, RemoteVal, StorageState, CallBack),
     {noreply, State};
 handle_command(merge_check, _Sender, #state{storage_state=StorageState,
                                             data_dir=DataDir,
@@ -168,7 +170,7 @@ handoff_finished(_TargetNode, State) ->
 handle_handoff_data(Binary, #state{storage_state=StorageState}=State) ->
     {KB, VB} = binary_to_term(Binary),
     {{Mod, Key}, {Mod, HoffVal}} = {binary_to_term(KB), binary_to_term(VB)},
-    ok = do_merge({Mod, Key}, HoffVal, StorageState),
+    ok = do_merge({Mod, Key}, HoffVal, StorageState, ?NOP),
     {reply, ok, State}.
 
 %% @doc Encodes a value to be sent over the wire in handoff.
@@ -213,8 +215,8 @@ terminate(_Reason, State) ->
 %% remote value will be accepted for the local state. If the key
 %% exists, the datatype-specific merge function will be called with
 %% the local and remote values and the merged value stored locally.
--spec do_merge(key(), term(), term()) -> ok | {error, term()}.
-do_merge({Mod, Key}, RemoteVal, StorageState) ->
+-spec do_merge(key(), term(), term(), function()) -> ok | {error, term()}.
+do_merge({Mod, Key}, RemoteVal, StorageState, CallBack) ->
     Merged = case lookup({Mod, Key}, StorageState) of
                  notfound ->
                      RemoteVal;
@@ -226,8 +228,10 @@ do_merge({Mod, Key}, RemoteVal, StorageState) ->
     case Merged of
         {error, Reason2} ->
             lager:error("Looking up ~p failed with ~p, on merge.", [{Mod, Key}, Reason2]),
+            CallBack({error, Reason2}),
             ok;
         _ ->
+            CallBack(ok),
             store({{Mod, Key}, {Mod, Merged}}, StorageState)
     end.
 
