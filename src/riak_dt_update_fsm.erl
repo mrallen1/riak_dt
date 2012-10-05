@@ -101,7 +101,11 @@ prepare(timeout, SD0=#state{key=Key, from=From, mod=Mod, args=Args,
         {_, _, true} ->
             %% This node is not in the preference list
             %% forward on to the first node
-            [{{_Idx, CoordNode},_Type}|_] = Preflist2,
+%%            [{{_Idx, CoordNode},_Type}|_] = Preflist2,
+            random:seed(os:timestamp()),
+            Nth = random:uniform(length(Preflist2)),
+            {{_Idx, CoordNode}, _Type} = lists:nth(Nth, Preflist2),
+            riak_dt_stat:update({coord_redir, CoordNode}),
             case riak_dt_update_fsm_sup:start_update_fsm(CoordNode, [ReqId, From, Mod, Key,
                                                                      Args, Timeout]) of
                 {ok, _Pid} ->

@@ -35,7 +35,8 @@ start(_StartType, _StartArgs) ->
     case riak_dt_sup:start_link() of
         {ok, Pid} ->
             riak_core:register(riak_dt, [
-                {vnode_module, riak_dt_vnode}
+                                         {vnode_module, riak_dt_vnode},
+                                         {stat_mod, riak_dt_stat}
             ]),
 
             riak_dt_wm_pncounter:add_routes(),
