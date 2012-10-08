@@ -62,7 +62,7 @@ update(Arg) ->
 %% @doc Produce a proplist-formatted view of the current aggregation
 %%      of stats.
 produce_stats() ->
-    [stat_value(Stat, Type) || {Stat, Type} <- stats()].
+    [stat_value(Stat, Type) || {{App, Stat}, [{type, Type}]} <- folsom_metrics:get_metrics_info(), App == ?APP].
 
 %% gen_server
 
