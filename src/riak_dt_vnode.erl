@@ -337,23 +337,25 @@ stop_storage(StorageState) ->
 %% @doc Looks up a key in the persistent storage.
 -spec lookup(K :: key(), StorageState :: term()) ->
                     {ok, {atom(), term()}} | notfound | {error, Reason :: term()}.
-lookup(ModKey, StorageState) ->
-    MKey = make_mkey(ModKey),
-    case bitcask:get(StorageState, MKey) of
-        {ok, Bin} ->
-            {ok, binary_to_term(Bin)};
-        not_found ->
-            notfound;
-        {error, Reason} ->
-            {error, Reason}
-    end.
+lookup({Mod, _Key}=ModKey, _StorageState) ->
+    _MKey = make_mkey(ModKey),
+    {ok, {Mod, Mod:new()}}.
+    %% case bitcask:get(StorageState, MKey) of
+    %%     {ok, Bin} ->
+    %%         {ok, binary_to_term(Bin)};
+    %%     not_found ->
+    %%         notfound;
+    %%     {error, Reason} ->
+    %%         {error, Reason}
+    %% end.
 
 %% @doc Persists a datatype under the given key.
 -spec store({K :: key(), {atom(), term()}}, StorageState :: term()) ->
                    ok.
-store({Key, Value}, StorageState) ->
-    MKey = make_mkey(Key),
-    bitcask:put(StorageState, MKey, term_to_binary(Value)).
+store({Key, _Value}, _StorageState) ->
+    _MKey = make_mkey(Key),
+    ok.
+%%    bitcask:put(StorageState, MKey, term_to_binary(Value)).
 
 %% @doc Folds over the persistent storage using the worker pool.
 async_fold(Fun, Acc, DataDir, StorageOpts) ->
