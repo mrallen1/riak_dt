@@ -75,22 +75,21 @@ init([ReqID, From, Mod, Key, Args, Opts]) ->
     {ok, prepare, SD, 0}.
 
 %% @doc Prepare the update by calculating the preference list.
-prepare(timeout, SD0=#state{key=Key, from=From, mod=Mod, args=Args,
-                            req_id=ReqId, timeout=Timeout}) ->
+prepare(timeout, SD0=#state{key=Key,  mod=Mod}) ->
     {ok,Ring} = riak_core_ring_manager:get_my_ring(),
     DocIdx = riak_core_util:chash_key({Mod, Key}),
     UpNodes = riak_core_node_watcher:nodes(riak_dt),
     Preflist2 = riak_core_apl:get_apl_ann(DocIdx, 3, Ring, UpNodes),
-    %% Check if this node is in the preference list so it can coordinate
-    LocalPL = [IndexNode || {{_Index, Node} = IndexNode, _Type} <- Preflist2,
-                            Node == node()],
+    %% Check if this node is a primary
+    LocalPrimaries = [IndexNode || {{_Index, Node} = IndexNode, primary} <- Preflist2,
+                                   Node == node()],
     Primaries = [IndexNode || {IndexNode, primary} <- Preflist2 ],
-    case {Primaries, Preflist2, LocalPL =:= []} of
-        {_, [], _} ->
+    case {Primaries, Preflist2} of
+        {_, []} ->
             %% Empty preflist, no replicas available
             client_reply({error, all_nodes_down}, SD0),
             {stop, error, SD0};
-        {[], _, _} ->
+        {[], _} ->
             %% There must be at least one primary in the preflist so
             %% we can reduce garbage accretion resulting from many
             %% vnodes being involved in writes. This is a separate
@@ -98,27 +97,19 @@ prepare(timeout, SD0=#state{key=Key, from=From, mod=Mod, args=Args,
             %% Ideally, we forward to a primary.
             client_reply({error, no_primaries}, SD0),
             {stop, error, SD0};
-        {_, _, true} ->
-            %% This node is not in the preference list
-            %% forward on to the first node
-%%            [{{_Idx, CoordNode},_Type}|_] = Preflist2,
-            random:seed(os:timestamp()),
-            Nth = random:uniform(length(Preflist2)),
-            {{_Idx, CoordNode}, _Type} = lists:nth(Nth, Preflist2),
-            riak_dt_stat:update({coord_redir, CoordNode}),
-            case riak_dt_update_fsm_sup:start_update_fsm(CoordNode, [ReqId, From, Mod, Key,
-                                                                     Args, Timeout]) of
-                {ok, _Pid} ->
-                    {stop, normal, SD0};
-                {error, Reason} ->
-                    lager:error("Unable to forward update for ~p to ~p - ~p\n",
-                                [Key, CoordNode, Reason]),
-                    client_reply({error, {coord_handoff_failed, Reason}}, SD0),
-                    {stop, error, SD0}
-            end;
         _ ->
-            CoordPLEntry = hd(LocalPL),
-            %% This node is in the preference list, continue
+            %% Chose a node to perform the update
+            %% Any primary will do
+            %% If we happen to be a primary, better still
+            CoordPLEntry = case LocalPrimaries of
+                               [] -> random:seed(os:timestamp()),
+                                     Nth = random:uniform(length(Primaries)),
+                                     {_Idx, Node}=Primary = lists:nth(Nth, Primaries),
+                                     riak_dt_stat:update({remote_primary, Node}),
+                                     Primary;
+                               _ -> riak_dt_stat:update(local_primary),
+                                    hd(LocalPrimaries)
+                           end,
             SD = SD0#state{coord_pl_entry = CoordPLEntry, preflist = Preflist2},
             {next_state, execute, SD, 0}
     end.

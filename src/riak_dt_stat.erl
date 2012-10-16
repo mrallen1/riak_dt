@@ -90,20 +90,23 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @spec update(term()) -> ok
 %% @doc Update the given stat.
-update1({coord_redir, Node}) ->
-    folsom_metrics:notify_existing_metric({?APP, coord_redir_tot}, {inc, 1}, counter),
-    StatName = join(coord_redir, Node),
+update1({remote_primary, Node}) ->
+    folsom_metrics:notify_existing_metric({?APP, remote_primary_tot}, {inc, 1}, counter),
+    StatName = join(remote_primary, Node),
     case (catch folsom_metrics:notify_existing_metric({?APP, StatName}, {inc, 1}, counter)) of
         ok ->
             ok;
         {'EXIT', _} ->
             register_stat({?APP, StatName}, counter),
             folsom_metrics:notify_existing_metric({?APP, StatName}, {inc, 1}, counter)
-    end.
+    end;
+update1(local_primary) ->
+    folsom_metrics:notify_existing_metric({?APP, local_primary}, {inc, 1}, counter).
 
 %% private
 stats() ->
-    [{coord_redir_tot, counter}].
+    [{remote_primary_tot, counter},
+     {local_primary, counter}].
 
 register_stat(Name, counter) ->
     folsom_metrics:new_counter(Name);
